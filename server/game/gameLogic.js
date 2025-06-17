@@ -79,6 +79,7 @@ export function startGame(room) {
   room.players.forEach(player => {
     player.dreamCards = deckUtils.dealCards(deck, 4);
     player.knownCards = {}; // Reset known cards
+    player.initialCardSelectionComplete = false;
   });
   
   // Setup initial discard pile
@@ -95,6 +96,7 @@ export function startGame(room) {
     pobudkaCalledBy: null,
     lastPlayerTurn: false,
     roundEnded: false,
+    initialCardSelectionPhase: true, // New phase for initial card selection
   };
   
   return room;
@@ -104,6 +106,16 @@ export function startGame(room) {
  * Handles player move
  */
 export function makeMove(room, playerId, moveType, cardIndex, targetCardIndex) {
+  // Special handling for initial card selection
+  if (moveType === 'selectInitialCards') {
+    return selectInitialCards(room, playerId, cardIndex);
+  }
+  
+  // Prevent other moves during initial card selection phase
+  if (room.gameState.initialCardSelectionPhase) {
+    throw new Error('Wait for all players to complete initial card selection');
+  }
+  
   if (room.gameState.pobudkaCalled) {
     throw new Error('Pobudka has been called, round is ending');
   }
@@ -111,34 +123,59 @@ export function makeMove(room, playerId, moveType, cardIndex, targetCardIndex) {
   const playerIndex = room.players.findIndex(p => p.id === playerId);
   const player = room.players[playerIndex];
   
+  let shouldEndTurn = true;
+  let result = null;
+  
   switch(moveType) {
     case 'takeFromDiscard':
       takeFromDiscard(room, player, cardIndex);
       break;
+    case 'peekDeckCard':
+      result = peekDeckCard(room, player);
+      shouldEndTurn = false; // Peeking doesn't end turn
+      break;
     case 'takeFromDeck':
-      takeFromDeck(room, player, cardIndex);
+      result = takeFromDeck(room, player, cardIndex);
+      // If player took a special card from deck, they get to use it but this ends their turn
+      break;
+    case 'useSpecialFromDeck':
+      result = useSpecialFromDeck(room, player, moveType, cardIndex, targetCardIndex);
       break;
     case 'useSpecialTakeTwoCards':
-      useSpecialTakeTwoCards(room, player, cardIndex, targetCardIndex);
+      // Check if player can use this special (must have taken a special card from deck)
+      const topDiscard = room.gameState.discardPile[room.gameState.discardPile.length - 1];
+      if (!topDiscard || topDiscard.special !== 'takeTwoCards') {
+        throw new Error('Cannot use this special ability - card must be taken from deck');
+      }
+      result = useSpecialTakeTwoCards(room, player, cardIndex);
+      // Using special ability ends turn
       break;
     case 'useSpecialPeekOneCard':
-      useSpecialPeekOneCard(room, player, cardIndex);
+      const topDiscard2 = room.gameState.discardPile[room.gameState.discardPile.length - 1];
+      if (!topDiscard2 || topDiscard2.special !== 'peekOneCard') {
+        throw new Error('Cannot use this special ability - card must be taken from deck');
+      }
+      result = useSpecialPeekOneCard(room, player, cardIndex);
+      // Using special ability ends turn
       break;
     case 'useSpecialSwapTwoCards':
+      const topDiscard3 = room.gameState.discardPile[room.gameState.discardPile.length - 1];
+      if (!topDiscard3 || topDiscard3.special !== 'swapTwoCards') {
+        throw new Error('Cannot use this special ability - card must be taken from deck');
+      }
       useSpecialSwapTwoCards(room, player, cardIndex, targetCardIndex);
+      // Using special ability ends turn
       break;
     default:
       throw new Error('Invalid move type');
   }
   
-  // Check if this was the last turn after Pobudka
-  if (room.gameState.lastPlayerTurn) {
-    endRound(room);
-    return;
+  // Move to next player only if turn should end
+  if (shouldEndTurn) {
+    moveToNextPlayer(room);
   }
   
-  // Move to next player
-  moveToNextPlayer(room);
+  return result;
 }
 
 /**
@@ -165,10 +202,42 @@ function takeFromDiscard(room, player, cardIndex) {
   
   // Update player's known cards
   player.knownCards[cardIndex] = discardCard;
+  
+  // Clear any temporary knowledge about this card from all players
+  const playerIndex = room.players.indexOf(player);
+  room.players.forEach(p => {
+    if (p.tempKnownCards) {
+      delete p.tempKnownCards[`${playerIndex}-${cardIndex}`];
+    }
+  });
 }
 
 /**
- * Takes a card from the deck and either replaces one card or uses special ability
+ * Peek at the top deck card (first step of taking from deck)
+ */
+function peekDeckCard(room, player) {
+  if (room.gameState.deck.length === 0) {
+    // If deck is empty, shuffle discard (except top card)
+    if (room.gameState.discardPile.length <= 1) {
+      throw new Error('No cards left in deck and discard pile');
+    }
+    
+    const topDiscard = room.gameState.discardPile.pop();
+    room.gameState.deck = deckUtils.shuffleDeck(room.gameState.discardPile);
+    room.gameState.discardPile = [topDiscard];
+  }
+  
+  // Get top card from deck without removing it
+  const deckCard = room.gameState.deck[room.gameState.deck.length - 1];
+  
+  // Store the peeked card temporarily
+  player.peekedDeckCard = deckCard;
+  
+  return deckCard;
+}
+
+/**
+ * Takes a card from deck and replaces one card in player's dream
  */
 function takeFromDeck(room, player, cardIndex) {
   if (room.gameState.deck.length === 0) {
@@ -185,13 +254,16 @@ function takeFromDeck(room, player, cardIndex) {
   // Get top card from deck
   const deckCard = room.gameState.deck.pop();
   
-  // Option 1: Replace card in dream
-  if (cardIndex !== undefined) {
+  if (cardIndex === -1) {
+    // Discard the deck card
+    room.gameState.discardPile.push(deckCard);
+  } else {
+    // Validate card index
     if (cardIndex < 0 || cardIndex >= player.dreamCards.length) {
       throw new Error('Invalid card index');
     }
     
-    // Swap with player's card
+    // Replace player's card with deck card
     const playerCard = player.dreamCards[cardIndex];
     player.dreamCards[cardIndex] = deckCard;
     
@@ -200,29 +272,67 @@ function takeFromDeck(room, player, cardIndex) {
     
     // Update player's known cards
     player.knownCards[cardIndex] = deckCard;
-  } 
-  // Option 2: Discard and potentially use special ability
-  else {
-    room.gameState.discardPile.push(deckCard);
     
-    // Player can use special ability
+    // Clear any temporary knowledge about this card from all players
+    const playerIndex = room.players.indexOf(player);
+    room.players.forEach(p => {
+      if (p.tempKnownCards) {
+        delete p.tempKnownCards[`${playerIndex}-${cardIndex}`];
+      }
+    });
+    
+    // If the card taken from deck has a special ability, player can use it
     if (deckCard.special) {
-      // The ability will be used in a separate function call
-      // Just make the card available in the discard pile
+      return {
+        canUseSpecial: true,
+        specialCard: deckCard
+      };
     }
   }
 }
 
 /**
- * Use special ability: Draw two cards, keep one and discard one
+ * Use special ability directly from deck card (discards the deck card)
  */
-function useSpecialTakeTwoCards(room, player, cardIndex) {
-  // Check if the top discard has this ability
-  const topDiscard = room.gameState.discardPile[room.gameState.discardPile.length - 1];
-  if (!topDiscard || topDiscard.special !== 'takeTwoCards') {
-    throw new Error('Cannot use this special ability');
+function useSpecialFromDeck(room, player, specialType, cardIndex, targetCardIndex) {
+  if (room.gameState.deck.length === 0) {
+    throw new Error('No cards in deck');
   }
+
+  // Get the top deck card
+  const deckCard = room.gameState.deck[room.gameState.deck.length - 1];
   
+  if (!deckCard.special) {
+    throw new Error('Deck card has no special ability');
+  }
+
+  // Remove the card from deck and discard it
+  const specialCard = room.gameState.deck.pop();
+  room.gameState.discardPile.push(specialCard);
+
+  // Execute the special ability
+  let result = null;
+  switch (specialCard.special) {
+    case 'takeTwoCards':
+      result = executeSpecialTakeTwoCards(room, player, cardIndex);
+      break;
+    case 'peekOneCard':
+      result = executeSpecialPeekOneCard(room, player, cardIndex);
+      break;
+    case 'swapTwoCards':
+      result = executeSpecialSwapTwoCards(room, player, cardIndex, targetCardIndex);
+      break;
+    default:
+      throw new Error('Unknown special ability');
+  }
+
+  return result;
+}
+
+/**
+ * Execute the takeTwoCards special ability
+ */
+function executeSpecialTakeTwoCards(room, player, cardIndex) {
   if (room.gameState.deck.length < 2) {
     // If deck doesn't have enough cards, shuffle discard (except top card)
     const topDiscard = room.gameState.discardPile.pop();
@@ -256,15 +366,16 @@ function useSpecialTakeTwoCards(room, player, cardIndex) {
 }
 
 /**
- * Use special ability: Peek at one card
+ * Use special ability: Draw two cards, keep one and discard one (wrapper for taken cards)
  */
-function useSpecialPeekOneCard(room, player, cardIndex) {
-  // Check if the top discard has this ability
-  const topDiscard = room.gameState.discardPile[room.gameState.discardPile.length - 1];
-  if (!topDiscard || topDiscard.special !== 'peekOneCard') {
-    throw new Error('Cannot use this special ability');
-  }
-  
+function useSpecialTakeTwoCards(room, player, cardIndex) {
+  return executeSpecialTakeTwoCards(room, player, cardIndex);
+}
+
+/**
+ * Execute the peekOneCard special ability
+ */
+function executeSpecialPeekOneCard(room, player, cardIndex) {
   // Determine which card to peek
   // Format: "p{playerIndex}c{cardIndex}"
   // e.g., "p0c2" = first player's third card
@@ -280,24 +391,35 @@ function useSpecialPeekOneCard(room, player, cardIndex) {
   // Get the target card
   const targetCard = room.players[targetPlayerIndex].dreamCards[targetCardIndex];
   
-  // Add to player's known cards
+  // Store the peeked card temporarily for the player who used the ability
+  if (!player.tempKnownCards) {
+    player.tempKnownCards = {};
+  }
+  player.tempKnownCards[`${targetPlayerIndex}-${targetCardIndex}`] = targetCard;
+  
+  // If peeking own card, add to regular known cards
   if (targetPlayerIndex === room.players.indexOf(player)) {
     player.knownCards[targetCardIndex] = targetCard;
   }
   
-  return targetCard;
+  return {
+    targetCard,
+    targetPlayerIndex,
+    targetCardIndex
+  };
 }
 
 /**
- * Use special ability: Swap two cards without looking
+ * Use special ability: Peek at one card (wrapper for taken cards)
  */
-function useSpecialSwapTwoCards(room, player, cardIndex1, cardIndex2) {
-  // Check if the top discard has this ability
-  const topDiscard = room.gameState.discardPile[room.gameState.discardPile.length - 1];
-  if (!topDiscard || topDiscard.special !== 'swapTwoCards') {
-    throw new Error('Cannot use this special ability');
-  }
-  
+function useSpecialPeekOneCard(room, player, cardIndex) {
+  return executeSpecialPeekOneCard(room, player, cardIndex);
+}
+
+/**
+ * Execute the swapTwoCards special ability
+ */
+function executeSpecialSwapTwoCards(room, player, cardIndex1, cardIndex2) {
   // Parse card identifiers
   // Format: "p{playerIndex}c{cardIndex}"
   const [player1Part, card1Part] = cardIndex1.split('c');
@@ -331,6 +453,21 @@ function useSpecialSwapTwoCards(room, player, cardIndex1, cardIndex2) {
   if (player2Index === playerIndex) {
     delete player.knownCards[card2Index];
   }
+  
+  // Clear any temporary knowledge about swapped cards from all players
+  room.players.forEach(p => {
+    if (p.tempKnownCards) {
+      delete p.tempKnownCards[`${player1Index}-${card1Index}`];
+      delete p.tempKnownCards[`${player2Index}-${card2Index}`];
+    }
+  });
+}
+
+/**
+ * Use special ability: Swap two cards without looking (wrapper for taken cards)
+ */
+function useSpecialSwapTwoCards(room, player, cardIndex1, cardIndex2) {
+  return executeSpecialSwapTwoCards(room, player, cardIndex1, cardIndex2);
 }
 
 /**
@@ -344,14 +481,8 @@ export function callPobudka(room, playerId) {
   room.gameState.pobudkaCalled = true;
   room.gameState.pobudkaCalledBy = playerId;
   
-  // Find the player's index
-  const playerIndex = room.players.findIndex(p => p.id === playerId);
-  if (playerIndex === -1) {
-    throw new Error('Player not found');
-  }
-  
-  // Set flag to notify this is the last turn
-  room.gameState.lastPlayerTurn = playerIndex === room.players.length - 1;
+  // End the round immediately when Pobudka is called
+  endRound(room);
 }
 
 /**
@@ -367,12 +498,6 @@ function moveToNextPlayer(room) {
   
   const nextPlayerIndex = (currentPlayerIndex + 1) % room.players.length;
   room.gameState.currentPlayer = room.players[nextPlayerIndex].id;
-  
-  // If Pobudka was called and this is the last player, end the round
-  if (room.gameState.pobudkaCalled && 
-      room.gameState.pobudkaCalledBy === room.players[(nextPlayerIndex + 1) % room.players.length].id) {
-    room.gameState.lastPlayerTurn = true;
-  }
 }
 
 /**
@@ -426,6 +551,7 @@ export function startNewRound(room) {
   room.players.forEach(player => {
     player.dreamCards = deckUtils.dealCards(deck, 4);
     player.knownCards = {}; // Reset known cards
+    player.initialCardSelectionComplete = false;
   });
   
   // Setup initial discard pile
@@ -451,6 +577,7 @@ export function startNewRound(room) {
     pobudkaCalledBy: null,
     lastPlayerTurn: false,
     roundEnded: false,
+    initialCardSelectionPhase: true,
   };
   
   return room;
@@ -461,4 +588,48 @@ export function startNewRound(room) {
  */
 export function isGameOver(room) {
   return room.players.some(player => player.score >= 100);
+}
+
+/**
+ * Handle initial card selection (see 2 cards at start)
+ */
+export function selectInitialCards(room, playerId, cardIndices) {
+  const player = room.players.find(p => p.id === playerId);
+  if (!player) {
+    throw new Error('Player not found');
+  }
+  
+  if (!room.gameState.initialCardSelectionPhase) {
+    throw new Error('Initial card selection phase is over');
+  }
+  
+  if (player.initialCardSelectionComplete) {
+    throw new Error('Initial card selection already completed');
+  }
+  
+  if (!Array.isArray(cardIndices) || cardIndices.length !== 2) {
+    throw new Error('Must select exactly 2 cards');
+  }
+  
+  // Validate card indices
+  cardIndices.forEach(index => {
+    if (index < 0 || index >= player.dreamCards.length) {
+      throw new Error('Invalid card index');
+    }
+  });
+  
+  // Store the selected cards as known
+  cardIndices.forEach(index => {
+    player.knownCards[index] = player.dreamCards[index];
+  });
+  
+  player.initialCardSelectionComplete = true;
+  
+  // Check if all players have completed initial selection
+  const allPlayersReady = room.players.every(p => p.initialCardSelectionComplete);
+  if (allPlayersReady) {
+    room.gameState.initialCardSelectionPhase = false;
+  }
+  
+  return room;
 } 

@@ -32,11 +32,15 @@ const App = () => {
       reconnectionDelay: 1000
     });
     setSocket(newSocket);
+    
+    // Make socket available globally for GamePage
+    window.socket = newSocket;
 
     // Cleanup function to disconnect socket
     return () => {
       if (newSocket) {
         newSocket.disconnect();
+        window.socket = null;
       }
     };
   }, []);

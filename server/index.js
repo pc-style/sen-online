@@ -13,7 +13,7 @@ const __dirname = dirname(__filename);
 
 // Import game logic modules
 import * as deckUtils from './game/deck.js';
-import { createGame, joinGame, leaveGame, startGame, makeMove, callPobudka } from './game/gameLogic.js';
+import { createGame, joinGame, leaveGame, startGame, makeMove, callPobudka, selectInitialCards } from './game/gameLogic.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -26,6 +26,9 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json());
+
+// Serve static files
+app.use('/img', express.static(path.join(__dirname, '../img')));
 
 // If in production, serve static files from dist
 if (process.env.NODE_ENV === 'production') {
@@ -128,19 +131,53 @@ io.on('connection', (socket) => {
       return;
     }
     
-    if (room.gameState.currentPlayer !== player.id) {
+    // Allow initial card selection for any player, regardless of turn
+    if (moveType !== 'selectInitialCards' && room.gameState.currentPlayer !== player.id) {
       socket.emit('error', { message: 'Not your turn' });
       return;
     }
     
     try {
-      makeMove(room, playerId, moveType, cardIndex, targetCardIndex);
+      const result = makeMove(room, playerId, moveType, cardIndex, targetCardIndex);
+      
+      // Handle special cases that return data
+      if (moveType === 'peekDeckCard') {
+        socket.emit('deckCardPeeked', { card: result });
+        return;
+      }
+      
+      // Handle taking from deck with special card
+      if (moveType === 'takeFromDeck' && result && result.canUseSpecial) {
+        socket.emit('specialCardAvailable', { 
+          card: result.specialCard,
+          canUse: true 
+        });
+      }
+      
+      // Note: useSpecialPeekOneCard now updates tempKnownCards which is sent via privateGameState
+      
+      if (moveType === 'selectInitialCards') {
+        // Don't move to next player during initial selection
+        io.to(roomId).emit('gameUpdated', { room });
+        
+        // Send private card info to players
+        room.players.forEach(p => {
+          io.to(p.id).emit('privateGameState', {
+            knownCards: p.knownCards,
+            initialCardSelectionComplete: p.initialCardSelectionComplete,
+          });
+        });
+        return;
+      }
+      
       io.to(roomId).emit('gameUpdated', { room });
       
       // Send private card info to players
       room.players.forEach(p => {
         io.to(p.id).emit('privateGameState', {
           knownCards: p.knownCards,
+          peekedDeckCard: p.peekedDeckCard,
+          tempKnownCards: p.tempKnownCards || {},
         });
       });
       

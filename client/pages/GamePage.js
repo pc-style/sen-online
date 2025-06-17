@@ -19,6 +19,9 @@ const GamePage = ({
   const [specialTargets, setSpecialTargets] = useState([]);
   const [roundOver, setRoundOver] = useState(false);
   const [gameOver, setGameOver] = useState(false);
+  const [initialCardSelection, setInitialCardSelection] = useState([]);
+  const [peekedCard, setPeekedCard] = useState(null);
+  const [showDeckCardModal, setShowDeckCardModal] = useState(false);
 
   // Get current player
   const currentPlayer = room?.players?.find(p => p.id === gameState?.currentPlayer);
@@ -39,6 +42,41 @@ const GamePage = ({
     }
   }, [room]);
 
+  // Handle initial card selection completion
+  useEffect(() => {
+    if (gameState?.initialCardSelectionPhase && 
+        privateGameState?.initialCardSelectionComplete === false &&
+        initialCardSelection.length === 0) {
+      // Player needs to select initial cards
+    }
+  }, [gameState, privateGameState, initialCardSelection]);
+
+  // Socket event handlers
+  useEffect(() => {
+    if (!window.socket) return;
+
+    const handleDeckCardPeeked = ({ card }) => {
+      setPeekedCard(card);
+      setShowDeckCardModal(true);
+    };
+
+    const handleSpecialCardAvailable = ({ card, canUse }) => {
+      if (canUse && card.special) {
+        // Show modal for using special ability
+        setShowSpecialModal(true);
+        setSpecialType(card.special);
+      }
+    };
+
+    window.socket.on('deckCardPeeked', handleDeckCardPeeked);
+    window.socket.on('specialCardAvailable', handleSpecialCardAvailable);
+
+    return () => {
+      window.socket.off('deckCardPeeked', handleDeckCardPeeked);
+      window.socket.off('specialCardAvailable', handleSpecialCardAvailable);
+    };
+  }, []);
+
   // Helper function to check if card is known
   const isCardKnown = (cardIndex) => {
     return privateGameState && privateGameState.knownCards && 
@@ -51,27 +89,85 @@ const GamePage = ({
            privateGameState.knownCards[cardIndex] : null;
   };
 
+  // Helper function to check if card is temporarily known (from peek ability)
+  const isTempKnown = (playerIndex, cardIndex) => {
+    return privateGameState?.tempKnownCards && 
+           privateGameState.tempKnownCards[`${playerIndex}-${cardIndex}`];
+  };
+
+  // Get temporarily known card
+  const getTempKnownCard = (playerIndex, cardIndex) => {
+    return privateGameState?.tempKnownCards ? 
+           privateGameState.tempKnownCards[`${playerIndex}-${cardIndex}`] : null;
+  };
+
+  // Handle initial card selection
+  const handleInitialCardSelection = (cardIndex) => {
+    if (initialCardSelection.includes(cardIndex)) {
+      // Deselect card
+      setInitialCardSelection(initialCardSelection.filter(i => i !== cardIndex));
+    } else if (initialCardSelection.length < 2) {
+      // Select card
+      setInitialCardSelection([...initialCardSelection, cardIndex]);
+    }
+  };
+
+  // Confirm initial card selection
+  const confirmInitialSelection = () => {
+    if (initialCardSelection.length === 2) {
+      makeMove('selectInitialCards', initialCardSelection);
+      setInitialCardSelection([]);
+    }
+  };
+
   // Handle deck click
   const handleDeckClick = () => {
     if (!isCurrentPlayer) return;
-    setActionType('takeFromDeck');
+    
+    // First peek at the card
+    makeMove('peekDeckCard');
+  };
+
+  // Handle deck card decision after peeking
+  const handleDeckCardDecision = (action, cardIndex = null) => {
+    if (action === 'take') {
+      makeMove('takeFromDeck', cardIndex);
+    } else if (action === 'discard') {
+      makeMove('takeFromDeck', -1); // -1 means discard
+    } else if (action === 'useSpecial') {
+      // Use special ability directly from deck (discards the card)
+      if (peekedCard?.special === 'takeTwoCards') {
+        makeMove('useSpecialFromDeck', cardIndex); // cardIndex is which of two cards to keep
+      } else if (peekedCard?.special === 'peekOneCard') {
+        makeMove('useSpecialFromDeck', cardIndex); // cardIndex is target card to peek
+      } else if (peekedCard?.special === 'swapTwoCards') {
+        makeMove('useSpecialFromDeck', cardIndex); // cardIndex is first card, need second
+      }
+    }
+    setShowDeckCardModal(false);
+    setPeekedCard(null);
   };
 
   // Handle discard pile click
   const handleDiscardClick = () => {
     if (!isCurrentPlayer) return;
     setActionType('takeFromDiscard');
+    // Note: Special abilities cannot be used when taking from discard pile
   };
 
   // Handle player card click
   const handlePlayerCardClick = (cardIndex) => {
     if (!isCurrentPlayer) return;
     
+    // If in initial selection phase
+    if (gameState?.initialCardSelectionPhase && !privateGameState?.initialCardSelectionComplete) {
+      handleInitialCardSelection(cardIndex);
+      return;
+    }
+    
     // If action type is set and we're selecting a card in our dream
     if (actionType) {
-      if (actionType === 'takeFromDeck') {
-        makeMove('takeFromDeck', cardIndex);
-      } else if (actionType === 'takeFromDiscard') {
+      if (actionType === 'takeFromDiscard') {
         makeMove('takeFromDiscard', cardIndex);
       }
       
@@ -101,20 +197,20 @@ const GamePage = ({
   };
 
   // Handle selection of cards for special abilities
-  const handleSpecialCardSelection = (playerId, cardIndex) => {
+  const handleSpecialCardSelection = (targetPlayerId, cardIndex) => {
     if (specialType === 'peekOneCard') {
       // For peek, we just need one card
-      makeMove('useSpecialPeekOneCard', `p${playerId}c${cardIndex}`);
+      makeMove('useSpecialPeekOneCard', `p${targetPlayerId}c${cardIndex}`);
       setShowSpecialModal(false);
       setSpecialType(null);
     } else if (specialType === 'swapTwoCards') {
       // For swap, we need two cards
-      setSpecialTargets([...specialTargets, { playerId, cardIndex }]);
+      setSpecialTargets([...specialTargets, { playerId: targetPlayerId, cardIndex }]);
       
       // If we have two cards selected, make the move
       if (specialTargets.length === 1) {
         const first = specialTargets[0];
-        const second = { playerId, cardIndex };
+        const second = { playerId: targetPlayerId, cardIndex };
         
         makeMove(
           'useSpecialSwapTwoCards', 
@@ -137,7 +233,7 @@ const GamePage = ({
   // Render discard pile top card
   const renderDiscardPile = () => {
     if (!gameState?.discardPile || gameState.discardPile.length === 0) {
-      return <div className="card-slot">Pusty</div>;
+      return <div className="card-slot discard-card">Pusty</div>;
     }
     
     const topCard = gameState.discardPile[gameState.discardPile.length - 1];
@@ -149,12 +245,15 @@ const GamePage = ({
     };
     
     return (
-      <Card 
-        card={cardToRender} 
-        isFaceDown={false}
-        onClick={handleDiscardClick}
-        isSelectable={isCurrentPlayer && !actionType}
-      />
+      <div className="discard-card">
+        <Card 
+          card={cardToRender} 
+          isFaceDown={false}
+          onClick={handleDiscardClick}
+          isSelectable={isCurrentPlayer && !actionType}
+          showHoverInfo={true}
+        />
+      </div>
     );
   };
 
@@ -162,7 +261,7 @@ const GamePage = ({
   const renderDeck = () => {
     return (
       <div 
-        className="game-card face-down"
+        className="game-card face-down deck-card"
         onClick={handleDeckClick}
         style={{ cursor: isCurrentPlayer && !actionType ? 'pointer' : 'default' }}
       >
@@ -178,6 +277,9 @@ const GamePage = ({
         <div className="player-info">
           <div className={`player-name ${isCurrentPlayer ? 'current-player' : ''}`}>
             {player.username} {isCurrentPlayer ? '(Twoja tura)' : ''}
+            {gameState?.initialCardSelectionPhase && player.id === playerId && !privateGameState?.initialCardSelectionComplete && 
+              <span> - Wybierz 2 karty</span>
+            }
           </div>
           <div>Punkty: {player.score}</div>
         </div>
@@ -187,17 +289,33 @@ const GamePage = ({
             const isMyCard = player.id === playerId;
             const knownCard = isMyCard ? getKnownCard(index) : null;
             
-            // If this is the current player's card and we know the value, or if the game has ended
-            const showCard = (isMyCard && knownCard) || gameState.roundEnded;
+            // Check for temporarily known cards (from peek ability)
+            const playerIndex = room.players.findIndex(p => p.id === player.id);
+            const tempKnownCard = getTempKnownCard(playerIndex, index);
+            
+            // If this is the current player's card and we know the value, or if the game has ended, or temporarily known
+            const showCard = (isMyCard && knownCard) || gameState.roundEnded || tempKnownCard;
+            const cardToShow = knownCard || tempKnownCard || card;
+            
+            // Check if in initial selection phase
+            const inInitialSelection = gameState?.initialCardSelectionPhase && !privateGameState?.initialCardSelectionComplete && isMyCard;
+            const isInitialSelected = inInitialSelection && initialCardSelection.includes(index);
             
             return (
               <Card
                 key={`player-${player.id}-card-${index}`}
-                card={showCard ? card : null}
+                card={showCard ? cardToShow : null}
                 isFaceDown={!showCard}
                 onClick={() => isMyCard ? handlePlayerCardClick(index) : null}
-                isSelectable={isMyCard && isCurrentPlayer && actionType}
-                isSelected={isMyCard && selectedCard === index}
+                isSelectable={
+                  (isMyCard && isCurrentPlayer && actionType) || 
+                  inInitialSelection
+                }
+                isSelected={
+                  (isMyCard && selectedCard === index) ||
+                  isInitialSelected
+                }
+                showHoverInfo={showCard}
               />
             );
           })}
@@ -357,33 +475,136 @@ const GamePage = ({
 
   // Handle action options for special cards
   const renderActionOptions = () => {
-    if (!isCurrentPlayer) return null;
-    
-    const topDiscard = gameState?.discardPile?.[gameState.discardPile.length - 1];
-    
-    if (!topDiscard?.special) return null;
-    
+    // Special abilities can only be used when taking cards from deck, not from discard pile
+    // This function is now mainly for other game actions
+    return null;
+  };
+
+  // Render initial card selection modal
+  const renderInitialCardSelectionModal = () => {
+    if (!gameState?.initialCardSelectionPhase || privateGameState?.initialCardSelectionComplete) {
+      return null;
+    }
+
     return (
-      <div className="card mt-2">
-        <div className="card-header">
-          <h3>Karta specjalna dostępna!</h3>
-        </div>
-        <div className="card-body">
-          <p>
-            Możesz użyć zdolności specjalnej karty: <strong>
-              {topDiscard.special === 'takeTwoCards' && 'Weź dwie karty'}
-              {topDiscard.special === 'peekOneCard' && 'Podejrzyj jedną'}
-              {topDiscard.special === 'swapTwoCards' && 'Zamień dwie'}
-            </strong>
+      <Modal
+        isOpen={true}
+        title="Wybierz 2 karty do zapamiętania"
+        onClose={() => {}} // Cannot close during initial selection
+      >
+        <div>
+          <p className="mb-2">
+            Wybierz dokładnie 2 karty ze swojego snu, które chcesz podejrzeć i zapamiętać:
           </p>
-          <button 
-            className="btn mt-1"
-            onClick={() => handleUseSpecial(topDiscard.special)}
-          >
-            Użyj zdolności
-          </button>
+          <div className="flex gap-2 justify-center mb-2">
+            {player?.dreamCards?.map((card, index) => (
+              <Card
+                key={`initial-${index}`}
+                card={null} // Don't show card until confirmed
+                isFaceDown={true}
+                onClick={() => handleInitialCardSelection(index)}
+                isSelectable={true}
+                isSelected={initialCardSelection.includes(index)}
+                showHoverInfo={false}
+              />
+            ))}
+          </div>
+          <p className="mb-2">
+            Wybrano: {initialCardSelection.length}/2
+          </p>
+          <div className="flex justify-center">
+            <button 
+              className="btn"
+              onClick={confirmInitialSelection}
+              disabled={initialCardSelection.length !== 2}
+            >
+              Potwierdź wybór
+            </button>
+          </div>
         </div>
-      </div>
+      </Modal>
+    );
+  };
+
+  // Render deck card preview modal
+  const renderDeckCardModal = () => {
+    if (!showDeckCardModal || !peekedCard) {
+      return null;
+    }
+
+    return (
+      <Modal
+        isOpen={true}
+        title="Karta z talii"
+        onClose={() => {}}
+      >
+        <div>
+          <p className="mb-2">Podejrzałeś kartę z talii:</p>
+          <div className="flex justify-center mb-2">
+            <Card
+              card={peekedCard}
+              isFaceDown={false}
+              showHoverInfo={true}
+            />
+          </div>
+          <p className="mb-2">Co chcesz zrobić z tą kartą?</p>
+          
+          {/* If the card has special ability, show option to use it */}
+          {peekedCard?.special && (
+            <div className="mb-2">
+              <p className="mb-1">
+                Ta karta ma zdolność specjalną: <strong>
+                  {peekedCard.special === 'takeTwoCards' && 'Weź dwie karty'}
+                  {peekedCard.special === 'peekOneCard' && 'Podejrzyj jedną kartę'}
+                  {peekedCard.special === 'swapTwoCards' && 'Zamień dwie karty'}
+                </strong>
+              </p>
+              <div className="flex justify-center gap-2 mb-2">
+                <button 
+                  className="btn btn-success"
+                  onClick={() => handleDeckCardDecision('useSpecial')}
+                >
+                  Użyj zdolności (odrzuć kartę)
+                </button>
+              </div>
+              <p className="mb-2 text-center">
+                <small>LUB weź kartę do ręki:</small>
+              </p>
+            </div>
+          )}
+          
+          {/* If we want to replace a card, show player's cards */}
+          <div className="mb-2">
+            <h4>Wymień za kartę ze snu:</h4>
+            <div className="flex gap-1 justify-center">
+              {player?.dreamCards?.map((card, index) => {
+                const knownCard = getKnownCard(index);
+                return (
+                  <div key={index} className="text-center">
+                    <Card
+                      card={knownCard}
+                      isFaceDown={!knownCard}
+                      onClick={() => handleDeckCardDecision('take', index)}
+                      isSelectable={true}
+                      showHoverInfo={!!knownCard}
+                    />
+                    <small>Pozycja {index + 1}</small>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          
+          <div className="flex justify-center gap-2">
+            <button 
+              className="btn btn-tertiary"
+              onClick={() => handleDeckCardDecision('discard')}
+            >
+              Odrzuć kartę
+            </button>
+          </div>
+        </div>
+      </Modal>
     );
   };
 
@@ -415,58 +636,132 @@ const GamePage = ({
       )}
 
       <div className="playing-area">
-        <div className="deck-area">
-          <div>
+        {/* Opponents area at top */}
+        <div className="opponents-area">
+          {room.players.filter(p => p.id !== playerId).map(p => (
+            <div key={p.id} className="opponent-player">
+              <div className="player-info">
+                <div className={`player-name ${p.id === currentPlayer?.id ? 'current-player' : ''}`}>
+                  {p.username} {p.id === currentPlayer?.id ? '(Tura)' : ''}
+                </div>
+              </div>
+              <div className="opponent-cards">
+                {p.dreamCards.map((card, index) => {
+                  // Check for temporarily known cards (from peek ability)
+                  const playerIndex = room.players.findIndex(player => player.id === p.id);
+                  const tempKnownCard = getTempKnownCard(playerIndex, index);
+                  
+                  const showCard = gameState.roundEnded || tempKnownCard;
+                  const cardToShow = tempKnownCard || card;
+                  
+                  return (
+                    <Card
+                      key={`opponent-${p.id}-card-${index}`}
+                      card={showCard ? cardToShow : null}
+                      isFaceDown={!showCard}
+                      onClick={() => null}
+                      isSelectable={false}
+                      showHoverInfo={showCard}
+                      className="opponent-card"
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Center area with deck and discard pile */}
+        <div className="center-area">
+          <div className="deck-area">
             <h4 className="mb-1">Talia</h4>
             {renderDeck()}
             <p className="mt-1">Pozostało: {gameState.deck.length}</p>
           </div>
-          <div>
+          <div className="deck-area">
             <h4 className="mb-1">Stos kart odrzuconych</h4>
             {renderDiscardPile()}
           </div>
         </div>
-        
-        <div className="game-actions">
-          {isCurrentPlayer && !gameState.pobudkaCalled && !gameState.roundEnded && (
-            <button 
-              className="btn btn-secondary"
-              onClick={handlePobudka}
-            >
-              Pobudka!
-            </button>
-          )}
-          {actionType && (
-            <button 
-              className="btn btn-tertiary"
-              onClick={() => setActionType(null)}
-            >
-              Anuluj
-            </button>
-          )}
-        </div>
-      </div>
 
-      {/* Player areas */}
-      <div>
-        <h3 className="mb-1">Gracze</h3>
-        
-        {/* Current player's cards */}
-        {player && renderPlayerCards(player, player.id === currentPlayer?.id)}
-        
-        {/* Other players' cards */}
-        {room.players.filter(p => p.id !== playerId).map(p => (
-          <React.Fragment key={p.id}>
-            {renderPlayerCards(p, p.id === currentPlayer?.id)}
-          </React.Fragment>
-        ))}
+        {/* Current player area at bottom */}
+        <div className="current-player-area">
+          {player && (
+            <>
+              <div className="player-info">
+                <div className={`player-name ${player.id === currentPlayer?.id ? 'current-player' : ''}`}>
+                  {player.username} {player.id === currentPlayer?.id ? '(Twoja tura)' : ''}
+                  {gameState?.initialCardSelectionPhase && player.id === playerId && !privateGameState?.initialCardSelectionComplete && 
+                    <span> - Wybierz 2 karty</span>
+                  }
+                </div>
+              </div>
+              <div className="current-player-cards">
+                {player.dreamCards.map((card, index) => {
+                  // For current player, use known cards
+                  const knownCard = getKnownCard(index);
+                  
+                  // If this is the current player's card and we know the value, or if the game has ended
+                  const showCard = knownCard || gameState.roundEnded;
+                  const cardToShow = knownCard || card;
+                  
+                  // Check if in initial selection phase
+                  const inInitialSelection = gameState?.initialCardSelectionPhase && !privateGameState?.initialCardSelectionComplete;
+                  const isInitialSelected = inInitialSelection && initialCardSelection.includes(index);
+                  
+                  return (
+                    <Card
+                      key={`current-player-card-${index}`}
+                      card={showCard ? cardToShow : null}
+                      isFaceDown={!showCard}
+                      onClick={() => handlePlayerCardClick(index)}
+                      isSelectable={
+                        (isCurrentPlayer && actionType) || 
+                        inInitialSelection
+                      }
+                      isSelected={
+                        (selectedCard === index) ||
+                        isInitialSelected
+                      }
+                      showHoverInfo={showCard}
+                      className="current-player-card"
+                    />
+                  );
+                })}
+              </div>
+            </>
+          )}
+          
+          {/* Game actions */}
+          <div className="game-actions">
+            {isCurrentPlayer && !gameState.pobudkaCalled && !gameState.roundEnded && (
+              <button 
+                className="btn btn-secondary"
+                onClick={handlePobudka}
+              >
+                Pobudka!
+              </button>
+            )}
+            {actionType && (
+              <button 
+                className="btn btn-tertiary"
+                onClick={() => setActionType(null)}
+              >
+                Anuluj
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {renderActionOptions()}
       {renderSpecialModal()}
       {renderRoundEndModal()}
 
-      <div className="score-board">
+      {renderInitialCardSelectionModal()}
+      {renderDeckCardModal()}
+
+      <div className={`score-board ${!gameState.roundEnded ? 'hidden' : ''}`}>
         <h3 className="score-header">Wyniki</h3>
         <ul className="score-list">
           {room.players.map(p => (

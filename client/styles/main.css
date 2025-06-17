@@ -200,11 +200,13 @@ body {
 
 /* Game Page */
 .game-page {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  height: 100vh;
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
+  gap: 20px;
 }
 
 .game-info {
@@ -219,16 +221,82 @@ body {
   margin: 20px 0;
 }
 
-/* Playing Area */
+/* Playing Area - New Layout */
 .playing-area {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  gap: 20px;
+}
+
+/* Opponents area - smaller cards at top */
+.opponents-area {
   display: flex;
-  justify-content: space-between;
-  margin-bottom: 30px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  min-height: 120px;
+}
+
+.opponent-cards {
+  display: flex;
+  gap: 5px;
+}
+
+.opponent-card {
+  width: 20px !important;
+  height: 30px !important;
+  font-size: 6px !important;
+}
+
+/* Center area - big deck and discard pile */
+.center-area {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 80px;
+  flex: 1;
 }
 
 .deck-area {
   display: flex;
-  gap: 20px;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.deck-card, .discard-card {
+  width: 120px;
+  height: 180px;
+  font-size: 18px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.deck-card:hover, .discard-card:hover {
+  transform: scale(1.05);
+}
+
+/* Current player area - larger cards at bottom */
+.current-player-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  min-height: 200px;
+}
+
+.current-player-cards {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.current-player-card {
+  width: 310px !important;
+  height: 460px !important;
+  font-size: 40px !important;
 }
 
 .card-slot {
@@ -255,6 +323,21 @@ body {
   cursor: pointer;
 }
 
+/* FORCE CARD SIZES - HIGH SPECIFICITY */
+.current-player-cards .game-card.current-player-card,
+.current-player-cards .current-player-card {
+  width: 233px !important;
+  height: 345px !important;
+  font-size: 30px !important;
+}
+
+.opponent-cards .game-card.opponent-card,
+.opponent-cards .opponent-card {
+  width: 80px !important;
+  height: 120px !important;
+  font-size: 24px !important;
+}
+
 .game-card:hover {
   transform: translateY(-5px);
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
@@ -279,11 +362,17 @@ body {
 .game-card.face-up {
   background-color: white;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
-  padding: 10px;
+  padding: 0;
+  overflow: visible;
+}
+
+.game-card .card-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
 }
 
 .game-card .card-value {
@@ -296,6 +385,46 @@ body {
   color: var(--color-secondary);
   text-align: center;
   margin-top: 5px;
+}
+
+/* Card hover overlay */
+.card-hover-overlay {
+  position: absolute;
+  top: -50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1001;
+  pointer-events: none;
+}
+
+.card-hover-overlay::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.9);
+}
+
+.card-hover-content {
+  text-align: center;
+}
+
+.card-hover-value {
+  font-weight: bold;
+  margin-bottom: 2px;
+}
+
+.card-hover-special {
+  font-size: 11px;
+  color: var(--color-tertiary);
 }
 
 /* Player Area */
@@ -331,6 +460,10 @@ body {
   border-radius: 8px;
   padding: 20px;
   margin-top: 20px;
+}
+
+.score-board.hidden {
+  display: none;
 }
 
 .score-header {
@@ -448,8 +581,50 @@ body {
     flex-direction: column;
   }
   
+  .game-page {
+    height: auto;
+    grid-template-rows: auto auto auto auto;
+  }
+  
   .playing-area {
+    grid-template-rows: auto auto auto;
+    height: auto;
+  }
+  
+  .center-area {
     flex-direction: column;
+    gap: 20px;
+  }
+  
+  .deck-card, .discard-card {
+    width: 120px;
+    height: 180px;
+  }
+  
+  .current-player-cards {
+    gap: 10px;
+  }
+  
+  .current-player-cards .game-card.current-player-card,
+  .current-player-cards .current-player-card {
+    width: 233px !important;
+    height: 345px !important;
+    font-size: 30px !important;
+  }
+  
+  .opponent-cards {
+    gap: 3px;
+  }
+  
+  .opponent-cards .game-card.opponent-card,
+  .opponent-cards .opponent-card {
+    width: 80px !important;
+    height: 120px !important;
+    font-size: 24px !important;
+  }
+  
+  .opponents-area {
+    gap: 10px;
   }
   
   .player-cards {
