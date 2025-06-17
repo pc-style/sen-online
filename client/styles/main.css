@@ -1,0 +1,459 @@
+:root {
+  --color-primary: #4a4e69;
+  --color-secondary: #9a8c98;
+  --color-tertiary: #c9ada7;
+  --color-light: #f2e9e4;
+  --color-dark: #22223b;
+  --color-accent: #5a6291;
+  --color-error: #e63946;
+  --color-success: #2a9d8f;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: var(--color-light);
+  color: var(--color-dark);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#root {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.container {
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Header */
+.header {
+  background-color: var(--color-primary);
+  color: var(--color-light);
+  padding: 20px 0;
+  text-align: center;
+}
+
+.header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+}
+
+.header p {
+  font-size: 1.2rem;
+  opacity: 0.8;
+}
+
+/* Buttons */
+.btn {
+  display: inline-block;
+  padding: 10px 20px;
+  background-color: var(--color-primary);
+  color: var(--color-light);
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn:hover {
+  background-color: var(--color-accent);
+  transform: translateY(-2px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-large {
+  padding: 12px 24px;
+  font-size: 18px;
+}
+
+.btn-secondary {
+  background-color: var(--color-secondary);
+}
+
+.btn-tertiary {
+  background-color: transparent;
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn-error {
+  background-color: var(--color-error);
+}
+
+.btn-success {
+  background-color: var(--color-success);
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  border: 1px solid var(--color-secondary);
+  border-radius: 4px;
+  background-color: var(--color-light);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(74, 78, 105, 0.2);
+}
+
+/* Cards */
+.card {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.card-header {
+  background-color: var(--color-primary);
+  color: white;
+  padding: 15px;
+}
+
+.card-body {
+  padding: 20px;
+}
+
+/* Home Page */
+.home-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 85vh;
+  text-align: center;
+}
+
+.home-buttons {
+  display: flex;
+  gap: 20px;
+  margin-top: 30px;
+}
+
+/* Lobby Page */
+.lobby-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 30px 0;
+}
+
+.lobby-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.lobby-header h2 {
+  font-size: 1.8rem;
+}
+
+.player-list {
+  list-style: none;
+  margin-bottom: 30px;
+}
+
+.player-item {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  background-color: white;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.player-host {
+  color: var(--color-accent);
+  font-weight: bold;
+}
+
+/* Game Page */
+.game-page {
+  display: flex;
+  flex-direction: column;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.game-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.game-actions {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+/* Playing Area */
+.playing-area {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 30px;
+}
+
+.deck-area {
+  display: flex;
+  gap: 20px;
+}
+
+.card-slot {
+  width: 100px;
+  height: 140px;
+  border: 2px dashed var(--color-secondary);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--color-secondary);
+}
+
+/* Game Cards */
+.game-card {
+  width: 100px;
+  height: 140px;
+  background-color: white;
+  border-radius: 8px;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.game-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.game-card.face-down {
+  background-color: var(--color-primary);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-primary),
+    var(--color-primary) 10px,
+    var(--color-accent) 10px,
+    var(--color-accent) 20px
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+}
+
+.game-card.face-up {
+  background-color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  padding: 10px;
+}
+
+.game-card .card-value {
+  font-size: 32px;
+  font-weight: bold;
+}
+
+.game-card .card-special {
+  font-size: 14px;
+  color: var(--color-secondary);
+  text-align: center;
+  margin-top: 5px;
+}
+
+/* Player Area */
+.player-area {
+  margin-bottom: 30px;
+}
+
+.player-name {
+  margin-bottom: 10px;
+  font-weight: bold;
+}
+
+.player-cards {
+  display: flex;
+  gap: 15px;
+}
+
+.player-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.current-player {
+  color: var(--color-accent);
+  font-weight: bold;
+}
+
+/* Score Board */
+.score-board {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.score-header {
+  font-size: 1.5rem;
+  margin-bottom: 15px;
+  color: var(--color-accent);
+}
+
+.score-list {
+  list-style: none;
+}
+
+.score-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-light);
+}
+
+.score-item:last-child {
+  border-bottom: none;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 500px;
+  width: 100%;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-body {
+  margin-bottom: 20px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Utilities */
+.text-center {
+  text-align: center;
+}
+
+.mt-1 {
+  margin-top: 10px;
+}
+
+.mt-2 {
+  margin-top: 20px;
+}
+
+.mb-1 {
+  margin-bottom: 10px;
+}
+
+.mb-2 {
+  margin-bottom: 20px;
+}
+
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.gap-1 {
+  gap: 10px;
+}
+
+.gap-2 {
+  gap: 20px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .home-buttons {
+    flex-direction: column;
+  }
+  
+  .playing-area {
+    flex-direction: column;
+  }
+  
+  .player-cards {
+    overflow-x: auto;
+    padding-bottom: 10px;
+  }
+} 
