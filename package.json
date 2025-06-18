@@ -17,9 +17,12 @@
     "@google/genai": "^1.5.1",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "framer-motion": "^12.18.1",
+    "howler": "^2.2.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
+    "react-sound-effects": "^1.1.1",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "uuid": "^11.1.0"
